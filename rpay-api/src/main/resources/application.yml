@@ -1,0 +1,163 @@
+# RPay Payment Gateway Configuration
+
+spring:
+  application:
+    name: rpay-payment-gateway
+
+  # Enable Virtual Threads (Java 21) for massive concurrency
+  threads:
+    virtual:
+      enabled: true
+
+  # Database Configuration
+  datasource:
+    url: jdbc:postgresql://localhost:5432/rpaydb
+    username: ${DB_USERNAME:rpay}
+    password: ${DB_PASSWORD:rpay123}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 50
+      minimum-idle: 10
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      pool-name: RPayHikariCP
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        use_sql_comments: false
+        jdbc:
+          batch_size: 20
+        order_inserts: true
+        order_updates: true
+
+  # Redis Configuration (for caching, idempotency, rate limiting)
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 100
+          max-idle: 50
+          min-idle: 10
+
+  # Cache Configuration
+  cache:
+    type: caffeine
+    caffeine:
+      spec: maximumSize=10000,expireAfterWrite=300s
+
+# Server Configuration
+server:
+  port: 8080
+  tomcat:
+    threads:
+      max: 1000  # Virtual threads can handle much higher
+      min-spare: 10
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/xml,text/plain
+
+# Resilience4j Configuration
+resilience4j:
+  circuitbreaker:
+    instances:
+      upiGateway:
+        registerHealthIndicator: true
+        slidingWindowSize: 100
+        minimumNumberOfCalls: 10
+        permittedNumberOfCallsInHalfOpenState: 5
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        waitDurationInOpenState: 10s
+        failureRateThreshold: 50
+        eventConsumerBufferSize: 10
+      cardGateway:
+        registerHealthIndicator: true
+        slidingWindowSize: 100
+        minimumNumberOfCalls: 10
+        waitDurationInOpenState: 10s
+        failureRateThreshold: 50
+      netbankingGateway:
+        registerHealthIndicator: true
+        slidingWindowSize: 100
+        minimumNumberOfCalls: 10
+        waitDurationInOpenState: 10s
+        failureRateThreshold: 50
+      walletGateway:
+        registerHealthIndicator: true
+        slidingWindowSize: 100
+        minimumNumberOfCalls: 10
+        waitDurationInOpenState: 10s
+        failureRateThreshold: 50
+
+  retry:
+    instances:
+      upiGateway:
+        maxAttempts: 3
+        waitDuration: 1s
+        enableExponentialBackoff: true
+        exponentialBackoffMultiplier: 2
+      cardGateway:
+        maxAttempts: 3
+        waitDuration: 1s
+        enableExponentialBackoff: true
+      netbankingGateway:
+        maxAttempts: 3
+        waitDuration: 1s
+      walletGateway:
+        maxAttempts: 3
+        waitDuration: 1s
+
+  ratelimiter:
+    instances:
+      default:
+        limitForPeriod: 1000
+        limitRefreshPeriod: 1s
+        timeoutDuration: 0s
+
+# Actuator Configuration (Monitoring & Health Checks)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+
+# Logging Configuration
+logging:
+  level:
+    root: INFO
+    com.rpay: DEBUG
+    org.springframework.web: INFO
+    org.hibernate: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+
+# Custom Application Properties
+rpay:
+  payment:
+    default-timeout-minutes: 15
+    max-refund-days: 180
+  security:
+    api-key-header: X-Api-Key
+    signature-header: X-Signature
+  webhook:
+    retry-attempts: 5
+    timeout-seconds: 30
